@@ -43,13 +43,10 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     private volatile boolean closed;
     private final String clusterName;
     private final RiemannClient riemannClient;
-    private final TransportService transportService;
-    private final ThreadPool threadPool;
-
-    private final Map<String, String> stateMap;
+    private final TransportClusterHealthAction transportClusterHealthAction;
 
     @Inject
-    public RiemannService(Settings settings, ClusterService clusterService, NodeService nodeService, TransportService transportService, ThreadPool threadPool) {
+    public RiemannService(Settings settings, ClusterService clusterService, NodeService nodeService, TransportClusterHealthAction transportClusterHealthAction) {
         super(settings);
         this.clusterService = clusterService;
         this.nodeService = nodeService;
@@ -58,13 +55,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
         riemannPort = settings.getAsInt("metrics.riemann.port", 5555);
         clusterName = settings.get("cluster.name");
         riemannClient = new RiemannClient(new InetSocketAddress(riemannHost, riemannPort));
-        this.transportService = transportService;
-        this.threadPool = threadPool;
-
-        stateMap = new HashMap<String, String>();
-        stateMap.put("yellow", "warning");
-        stateMap.put("green", "ok");
-        stateMap.put("red", "critical");
+        this.transportClusterHealthAction = transportClusterHealthAction;
     }
 
     @Override
@@ -100,26 +91,34 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
             while (!closed) {
                 DiscoveryNode node = clusterService.localNode();
                 boolean isClusterStarted = clusterService.lifecycleState().equals(Lifecycle.State.STARTED);
-
-                TransportClusterHealthAction transportClusterHealthAction = new TransportClusterHealthAction(settings, transportService, clusterService, threadPool, new ClusterName(clusterName));
-                transportClusterHealthAction.execute(new ClusterHealthRequest(), new ActionListener<ClusterHealthResponse>() {
-                    @Override
-                    public void onResponse(ClusterHealthResponse clusterIndexHealths) {
-                        riemannClient.event().host(clusterName).service("Cluster Health").state(stateMap.get(clusterIndexHealths.getStatus().name().toLowerCase())).send();
-                    }
-
-                    @Override
-                    public void onFailure(Throwable throwable) {
-                        riemannClient.event().host(clusterName).service("heap").state("error").send();
-                    }
-                });
-
                 if (isClusterStarted && node != null) {
+
+                    final String eventName = clusterName + ":" + node.name();
+
+                    transportClusterHealthAction.execute(new ClusterHealthRequest(), new ActionListener<ClusterHealthResponse>() {
+                        @Override
+                        public void onResponse(ClusterHealthResponse clusterIndexHealths) {
+                            riemannClient.event().host(eventName).service("Cluster Health").description("cluster_health")
+                                    .state(clusterIndexHealths.getStatus().name().toLowerCase()).send();
+                        }
+
+                        @Override
+                        public void onFailure(Throwable throwable) {
+                            riemannClient.event().host(eventName).service("Cluster Health").description("cluster_health").state("error").send();
+                        }
+                    });
+
                     NodeStats nodeStats = nodeService.stats(true, true, true, true, true, true, true, true, true);
-                    riemannClient.event().host(clusterName).
-                            service("heap").state("warning").metric(nodeStats.getJvm().getMem().getHeapUsed().getBytes())
-                            .service("docs").state("warning").metric(nodeStats.getIndices().docs().count())
-                            .service("GC").state("warning").metric(nodeStats.jvm().getGc().collectionCount())
+
+                    Long heapUsed = nodeStats.getJvm().getMem().getHeapUsed().getBytes();
+                    Long heapCommitted = nodeStats.getJvm().getMem().getHeapCommitted().getGb();
+
+                    riemannClient.event().host(eventName).
+                            service("heap used").state("warning").metric(heapUsed).send();
+                    riemannClient.event().host(eventName).
+                            service("heap commited").state("warning").metric(heapCommitted).send();
+                    riemannClient.event().host(eventName).service("docs").state("warning").metric(nodeStats.getIndices().docs().count()).send();
+                    riemannClient.event().host(eventName).service("GC").state("warning").metric(nodeStats.jvm().getGc().collectionCount())
                             .send();
                 } else {
                     if (node != null) {
