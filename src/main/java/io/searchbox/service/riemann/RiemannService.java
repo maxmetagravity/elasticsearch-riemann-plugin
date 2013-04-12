@@ -19,6 +19,7 @@ import org.elasticsearch.node.service.NodeService;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.concurrent.TimeUnit;
 
 public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
 
@@ -29,7 +30,6 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     private final TimeValue riemannRefreshInternal;
 
     private volatile Thread riemannReporterThread;
-    private volatile boolean closed;
     private final String clusterName;
     private RiemannClient riemannClient;
     private final TransportClusterHealthAction transportClusterHealthAction;
@@ -70,18 +70,14 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
 
     @Override
     protected void doStop() throws ElasticSearchException {
-        if (closed) {
-            return;
-        }
         try {
-            riemannClient.connect();
+            riemannClient.disconnect();
         } catch (IOException e) {
             throw new ElasticSearchException("Can not connect to Riemann", e);
         }
         if (riemannReporterThread != null) {
             riemannReporterThread.interrupt();
         }
-        closed = true;
         logger.info("Riemann reporter stopped");
     }
 
@@ -92,12 +88,13 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     public class RiemannReporterThread implements Runnable {
 
         public void run() {
-            while (!closed) {
-                DiscoveryNode node = clusterService.localNode();
-                boolean isClusterStarted = clusterService.lifecycleState().equals(Lifecycle.State.STARTED);
-                if (isClusterStarted && node != null) {
+            DiscoveryNode node = clusterService.localNode();
+            boolean isClusterStarted = clusterService.lifecycleState().equals(Lifecycle.State.STARTED);
+            if (isClusterStarted && node != null) {
 
-                    final String hostDefinition = clusterName + ":" + node.name();
+                final String hostDefinition = clusterName + ":" + node.name();
+
+                if (settings.getAsBoolean("metrics.riemann.health", true)) {
 
                     transportClusterHealthAction.execute(new ClusterHealthRequest(), new ActionListener<ClusterHealthResponse>() {
                         @Override
@@ -111,23 +108,23 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
                             riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").state("error").send();
                         }
                     });
+                }
 
-                    NodeStats nodeStats = nodeService.stats(true, true, true, true, true, true, true, true, true);
-                    NodeStatsRiemannEvent nodeStatsRiemannEvent = new NodeStatsRiemannEvent(riemannClient, nodeStats, hostDefinition);
-                    nodeStatsRiemannEvent.sendEvents();
+                NodeStats nodeStats = nodeService.stats(true, true, true, true, true, true, true, true, true);
+                NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition);
+                nodeStatsRiemannEvent.sendEvents(nodeStats);
 
+            } else {
+                if (node != null) {
+                    logger.debug("[{}]/[{}] is not started", node.getId(), node.getName());
                 } else {
-                    if (node != null) {
-                        logger.debug("[{}]/[{}] is not started", node.getId(), node.getName());
-                    } else {
-                        logger.debug("Node is null!");
-                    }
+                    logger.debug("Node is null!");
                 }
+            }
 
-                try {
-                    Thread.sleep(riemannRefreshInternal.millis());
-                } catch (InterruptedException e1) {
-                }
+            try {
+                Thread.sleep(riemannRefreshInternal.millis());
+            } catch (InterruptedException e1) {
             }
         }
     }
