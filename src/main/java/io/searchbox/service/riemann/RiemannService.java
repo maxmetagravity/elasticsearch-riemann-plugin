@@ -102,7 +102,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
                             transportClusterHealthAction.execute(new ClusterHealthRequest(), new ActionListener<ClusterHealthResponse>() {
                                 @Override
                                 public void onResponse(ClusterHealthResponse clusterIndexHealths) {
-                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health")
+                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").tag(clusterName)
                                             .state(RiemannUtils.getStateWithClusterInformation(clusterIndexHealths.getStatus().name())).send();
                                 }
 
