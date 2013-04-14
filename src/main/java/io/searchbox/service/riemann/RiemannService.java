@@ -19,7 +19,6 @@ import org.elasticsearch.node.service.NodeService;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.concurrent.TimeUnit;
 
 public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
 
@@ -33,6 +32,8 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     private final String clusterName;
     private RiemannClient riemannClient;
     private final TransportClusterHealthAction transportClusterHealthAction;
+
+    private boolean open = true;
 
     @Inject
     public RiemannService(Settings settings, ClusterService clusterService, NodeService nodeService, TransportClusterHealthAction transportClusterHealthAction) {
@@ -72,6 +73,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     protected void doStop() throws ElasticSearchException {
         try {
             riemannClient.disconnect();
+            open = false;
         } catch (IOException e) {
             throw new ElasticSearchException("Can not connect to Riemann", e);
         }
@@ -86,45 +88,48 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     }
 
     public class RiemannReporterThread implements Runnable {
-
         public void run() {
-            DiscoveryNode node = clusterService.localNode();
-            boolean isClusterStarted = clusterService.lifecycleState().equals(Lifecycle.State.STARTED);
-            if (isClusterStarted && node != null) {
+            while (open) {
+                if (riemannClient.isConnected()) {
+                    DiscoveryNode node = clusterService.localNode();
+                    boolean isClusterStarted = clusterService.lifecycleState().equals(Lifecycle.State.STARTED);
+                    if (isClusterStarted && node != null) {
 
-                final String hostDefinition = clusterName + ":" + node.name();
+                        final String hostDefinition = clusterName + ":" + node.name();
 
-                if (settings.getAsBoolean("metrics.riemann.health", true)) {
+                        if (settings.getAsBoolean("metrics.riemann.health", true)) {
 
-                    transportClusterHealthAction.execute(new ClusterHealthRequest(), new ActionListener<ClusterHealthResponse>() {
-                        @Override
-                        public void onResponse(ClusterHealthResponse clusterIndexHealths) {
-                            riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health")
-                                    .state(clusterIndexHealths.getStatus().name().toLowerCase()).send();
+                            transportClusterHealthAction.execute(new ClusterHealthRequest(), new ActionListener<ClusterHealthResponse>() {
+                                @Override
+                                public void onResponse(ClusterHealthResponse clusterIndexHealths) {
+                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health")
+                                            .state(RiemannUtils.getStateWithClusterInformation(clusterIndexHealths.getStatus().name())).send();
+                                }
+
+                                @Override
+                                public void onFailure(Throwable throwable) {
+                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").state("critical").send();
+                                }
+                            });
                         }
 
-                        @Override
-                        public void onFailure(Throwable throwable) {
-                            riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").state("error").send();
+                        NodeStats nodeStats = nodeService.stats(true, true, true, true, true, true, true, true, true);
+                        NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition);
+                        nodeStatsRiemannEvent.sendEvents(nodeStats);
+
+                    } else {
+                        if (node != null) {
+                            logger.debug("[{}]/[{}] is not started", node.getId(), node.getName());
+                        } else {
+                            logger.debug("Node is null!");
                         }
-                    });
+                    }
+
+                    try {
+                        Thread.sleep(riemannRefreshInternal.millis());
+                    } catch (InterruptedException e1) {
+                    }
                 }
-
-                NodeStats nodeStats = nodeService.stats(true, true, true, true, true, true, true, true, true);
-                NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition);
-                nodeStatsRiemannEvent.sendEvents(nodeStats);
-
-            } else {
-                if (node != null) {
-                    logger.debug("[{}]/[{}] is not started", node.getId(), node.getName());
-                } else {
-                    logger.debug("Node is null!");
-                }
-            }
-
-            try {
-                Thread.sleep(riemannRefreshInternal.millis());
-            } catch (InterruptedException e1) {
             }
         }
     }
