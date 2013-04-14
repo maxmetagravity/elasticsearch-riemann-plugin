@@ -48,7 +48,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
             riemannClient = RiemannClient.udp(new InetSocketAddress(riemannHost, riemannPort));
 
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error("Can not create Riemann UDP connection", e);
         }
         this.transportClusterHealthAction = transportClusterHealthAction;
     }
@@ -58,7 +58,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
         try {
             riemannClient.connect();
         } catch (IOException e) {
-            throw new ElasticSearchException("Can not connect to Riemann", e);
+            logger.error("Can not connect to Riemann", e);
         }
         if (riemannHost != null && riemannHost.length() > 0) {
             riemannReporterThread = EsExecutors.daemonThreadFactory(settings, "riemann_reporter").newThread(new RiemannReporterThread());
@@ -75,7 +75,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
             riemannClient.disconnect();
             open = false;
         } catch (IOException e) {
-            throw new ElasticSearchException("Can not connect to Riemann", e);
+            logger.error("Riemann connection can not be closed", e);
         }
         if (riemannReporterThread != null) {
             riemannReporterThread.interrupt();
@@ -108,13 +108,13 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
 
                                 @Override
                                 public void onFailure(Throwable throwable) {
-                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").state("critical").send();
+                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").tag(clusterName).state("critical").send();
                                 }
                             });
                         }
 
                         NodeStats nodeStats = nodeService.stats(true, true, true, true, true, true, true, true, true);
-                        NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition);
+                        NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition, clusterName);
                         nodeStatsRiemannEvent.sendEvents(nodeStats);
 
                     } else {
