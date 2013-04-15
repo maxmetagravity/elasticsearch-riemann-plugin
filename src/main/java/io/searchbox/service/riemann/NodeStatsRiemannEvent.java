@@ -15,24 +15,25 @@ public class NodeStatsRiemannEvent {
 
     private RiemannClient riemannClient;
     private String hostDefinition;
-    private String clusterName;
     private Settings settings;
     private static NodeStatsRiemannEvent nodeStatsRiemannEvent;
-    private Map<String, Long> deltaMap = new HashMap<String, Long>();
+    private Map<String, Long> deltaMap;
+    private String[] tags;
 
-    public static NodeStatsRiemannEvent getNodeStatsRiemannEvent(RiemannClient riemannClient, Settings settings, String hostDefinition, String clusterName) {
+    public static NodeStatsRiemannEvent getNodeStatsRiemannEvent(RiemannClient riemannClient,
+                                                                 Settings settings, String hostDefinition, String clusterName, String[] tags) {
         if (nodeStatsRiemannEvent == null) {
-            nodeStatsRiemannEvent = new NodeStatsRiemannEvent(riemannClient, settings, hostDefinition, clusterName);
+            nodeStatsRiemannEvent = new NodeStatsRiemannEvent(riemannClient, settings, hostDefinition, clusterName, tags);
         }
         return nodeStatsRiemannEvent;
     }
 
-    private NodeStatsRiemannEvent(RiemannClient riemannClient, Settings settings, String hostDefinition, String clusterName) {
+    private NodeStatsRiemannEvent(RiemannClient riemannClient, Settings settings, String hostDefinition, String clusterName, String[] tags) {
         this.riemannClient = riemannClient;
         this.hostDefinition = hostDefinition;
         this.settings = settings;
-        this.clusterName = clusterName;
-
+        this.tags = tags;
+        this.deltaMap = new HashMap<String, Long>();
         // init required delta instead of null check
         deltaMap.put("index_rate", 0L);
         deltaMap.put("query_rate", 0L);
@@ -81,7 +82,7 @@ public class NodeStatsRiemannEvent {
         long indexingCurrent = indexCount - delta;
         deltaMap.put("index_rate", indexCount);
         riemannClient.event().host(hostDefinition).
-                service("Current Indexing Rate").description("current_indexing_rate").tag(clusterName).state(RiemannUtils.getState(indexingCurrent, 300, 1000)).metric(indexingCurrent).send();
+                service("Current Indexing Rate").description("current_indexing_rate").tags(tags).state(RiemannUtils.getState(indexingCurrent, 300, 1000)).metric(indexingCurrent).send();
     }
 
     private void heapRatio(NodeStats nodeStats) {
@@ -89,7 +90,7 @@ public class NodeStatsRiemannEvent {
         long heapCommitted = nodeStats.getJvm().getMem().getHeapCommitted().getBytes();
         long heapRatio = (heapUsed * 100) / heapCommitted;
         riemannClient.event().host(hostDefinition).
-                service("Heap Usage Ratio %").description("heap_usage_ratio").tag(clusterName).state(RiemannUtils.getState(heapRatio, 85, 95)).metric(heapRatio).send();
+                service("Heap Usage Ratio %").description("heap_usage_ratio").tags(tags).state(RiemannUtils.getState(heapRatio, 85, 95)).metric(heapRatio).send();
     }
 
     private void currentQueryRate(NodeStats nodeStats) {
@@ -100,7 +101,7 @@ public class NodeStatsRiemannEvent {
         deltaMap.put("query_rate", queryCount);
 
         riemannClient.event().host(hostDefinition).
-                service("Current Query Rate").description("current_query_rate").tag(clusterName).state(RiemannUtils.getState(queryCurrent, 50, 70)).metric(queryCurrent).send();
+                service("Current Query Rate").description("current_query_rate").tags(tags).state(RiemannUtils.getState(queryCurrent, 50, 70)).metric(queryCurrent).send();
     }
 
     private void currentFetchRate(NodeStats nodeStats) {
@@ -109,25 +110,25 @@ public class NodeStatsRiemannEvent {
         long fetchCurrent = fetchCount - delta;
         deltaMap.put("fetch_rate", fetchCount);
         riemannClient.event().host(hostDefinition).
-                service("Current Fetch Rate").description("current_fetch_rate").tag(clusterName).state(RiemannUtils.getState(fetchCurrent, 50, 70)).metric(fetchCurrent).send();
+                service("Current Fetch Rate").description("current_fetch_rate").tags(tags).state(RiemannUtils.getState(fetchCurrent, 50, 70)).metric(fetchCurrent).send();
     }
 
     private void totalThreadCount(NodeStats nodeStats) {
         int threadCount = nodeStats.getJvm().getThreads().getCount();
         riemannClient.event().host(hostDefinition).
-                service("Total Thread Count").description("total_thread_count").tag(clusterName).state(RiemannUtils.getState(threadCount, 150, 200)).metric(threadCount).send();
+                service("Total Thread Count").description("total_thread_count").tags(tags).state(RiemannUtils.getState(threadCount, 150, 200)).metric(threadCount).send();
     }
 
     private void systemLoadOne(NodeStats nodeStats) {
         double[] systemLoad = nodeStats.getOs().getLoadAverage();
         riemannClient.event().host(hostDefinition).
-                service("System Load(1m)").description("system_load").tag(clusterName).state(RiemannUtils.getState((long) systemLoad[0], 2, 5)).metric(systemLoad[0]).send();
+                service("System Load(1m)").description("system_load").tags(tags).state(RiemannUtils.getState((long) systemLoad[0], 2, 5)).metric(systemLoad[0]).send();
     }
 
     private void systemMemory(NodeStats nodeStats) {
         short memoryUsedPercentage = nodeStats.getOs().getMem().getUsedPercent();
         riemannClient.event().host(hostDefinition).
-                service("System Memory Usage %").description("system_memory_usage").tag(clusterName).state(RiemannUtils.getState(memoryUsedPercentage, 80, 90)).metric(memoryUsedPercentage).send();
+                service("System Memory Usage %").description("system_memory_usage").tags(tags).state(RiemannUtils.getState(memoryUsedPercentage, 80, 90)).metric(memoryUsedPercentage).send();
 
     }
 
@@ -137,7 +138,7 @@ public class NodeStatsRiemannEvent {
             long total = info.getTotal().getBytes();
             long usageRatio = ((total - free) * 100) / total;
             riemannClient.event().host(hostDefinition).
-                    service("Disk Usage %").description("system_disk_usage").tag(clusterName).state(RiemannUtils.getState(usageRatio, 80, 90)).metric(usageRatio).send();
+                    service("Disk Usage %").description("system_disk_usage").tags(tags).state(RiemannUtils.getState(usageRatio, 80, 90)).metric(usageRatio).send();
         }
     }
 }

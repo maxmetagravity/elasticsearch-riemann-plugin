@@ -32,6 +32,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     private final String clusterName;
     private RiemannClient riemannClient;
     private final TransportClusterHealthAction transportClusterHealthAction;
+    private String[] tags;
 
     private boolean open = true;
 
@@ -44,9 +45,9 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
         riemannHost = settings.get("metrics.riemann.host", "localhost");
         riemannPort = settings.getAsInt("metrics.riemann.port", 5555);
         clusterName = settings.get("cluster.name");
+        tags = settings.getAsArray("metrics.riemann.tags", new String[]{clusterName});
         try {
             riemannClient = RiemannClient.udp(new InetSocketAddress(riemannHost, riemannPort));
-
         } catch (IOException e) {
             logger.error("Can not create Riemann UDP connection", e);
         }
@@ -102,19 +103,19 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
                             transportClusterHealthAction.execute(new ClusterHealthRequest(), new ActionListener<ClusterHealthResponse>() {
                                 @Override
                                 public void onResponse(ClusterHealthResponse clusterIndexHealths) {
-                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").tag(clusterName)
+                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").tags(tags)
                                             .state(RiemannUtils.getStateWithClusterInformation(clusterIndexHealths.getStatus().name())).send();
                                 }
 
                                 @Override
                                 public void onFailure(Throwable throwable) {
-                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").tag(clusterName).state("critical").send();
+                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").tags(tags).state("critical").send();
                                 }
                             });
                         }
 
                         NodeStats nodeStats = nodeService.stats(true, true, true, true, true, true, true, true, true);
-                        NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition, clusterName);
+                        NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition, clusterName, tags);
                         nodeStatsRiemannEvent.sendEvents(nodeStats);
 
                     } else {
