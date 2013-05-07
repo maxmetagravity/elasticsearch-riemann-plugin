@@ -77,7 +77,7 @@ public class NodeStatsRiemannEvent {
     }
 
     private void currentIndexingRate(NodeStats nodeStats) {
-        long indexCount = nodeStats.indices().indexing().total().getIndexCount();
+        long indexCount = nodeStats.getIndices().getIndexing().getTotal().getIndexCount();
         long delta = deltaMap.get("index_rate");
         long indexingCurrent = indexCount - delta;
         deltaMap.put("index_rate", indexCount);
@@ -94,7 +94,7 @@ public class NodeStatsRiemannEvent {
     }
 
     private void currentQueryRate(NodeStats nodeStats) {
-        long queryCount = nodeStats.indices().search().total().getQueryCount();
+        long queryCount = nodeStats.getIndices().getSearch().getTotal().getQueryCount();
 
         long delta = deltaMap.get("query_rate");
         long queryCurrent = queryCount - delta;
@@ -105,7 +105,7 @@ public class NodeStatsRiemannEvent {
     }
 
     private void currentFetchRate(NodeStats nodeStats) {
-        long fetchCount = nodeStats.indices().search().total().getFetchCount();
+        long fetchCount = nodeStats.getIndices().getSearch().getTotal().getFetchCount();
         long delta = deltaMap.get("fetch_rate");
         long fetchCurrent = fetchCount - delta;
         deltaMap.put("fetch_rate", fetchCount);

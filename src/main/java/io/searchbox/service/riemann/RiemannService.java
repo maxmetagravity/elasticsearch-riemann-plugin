@@ -7,6 +7,7 @@ import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
 import org.elasticsearch.action.admin.cluster.health.TransportClusterHealthAction;
 import org.elasticsearch.action.admin.cluster.node.stats.NodeStats;
+import org.elasticsearch.action.admin.indices.stats.CommonStatsFlags;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
@@ -114,7 +115,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
                             });
                         }
 
-                        NodeStats nodeStats = nodeService.stats(true, true, true, true, true, true, true, true, true);
+                        NodeStats nodeStats = nodeService.stats(new CommonStatsFlags().all(), true, true, true, true, true, true, true, true);
                         NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition, clusterName, tags);
                         nodeStatsRiemannEvent.sendEvents(nodeStats);
 
