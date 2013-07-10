@@ -1,1 +1,1 @@
-bin/plugin -url https://bitbucket.org/searchbox/elasticsearch-riemann-plugin/downloads/elasticsearch-riemann-plugin-0.2-SNAPSHOT.zip  -install riemann
+bin/plugin -url https://github.com/searchbox-io/elasticsearch-riemann-plugin/releases/elasticsearch-riemann-plugin-0.2/3154/elasticsearch-riemann-plugin-0.2.zip  -install riemann
