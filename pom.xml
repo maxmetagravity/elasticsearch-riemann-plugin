@@ -15,6 +15,12 @@
         <riemann-java-client.version>0.2.0</riemann-java-client.version>
     </properties>
 
+    <scm>
+        <connection>scm:git:git@github.com:searchbox-io/elasticsearch-riemann-plugin.git</connection>
+        <developerConnection>scm:git:git@github.com:searchbox-io/elasticsearch-riemann-plugin.git</developerConnection>
+        <url>git@github.com:searchbox-io/elasticsearch-riemann-plugin.git</url>
+    </scm>
+
     <!--
     <repositories>
         <repository>
