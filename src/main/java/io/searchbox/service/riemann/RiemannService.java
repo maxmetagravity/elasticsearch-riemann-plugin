@@ -15,11 +15,12 @@ import org.elasticsearch.common.component.Lifecycle;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.common.util.concurrent.EsExecutors;
 import org.elasticsearch.node.service.NodeService;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
 
@@ -29,7 +30,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     private final Integer riemannPort;
     private final TimeValue riemannRefreshInternal;
 
-    private volatile Thread riemannReporterThread;
+    private volatile ExecutorService riemannReporterThreadExecutorService;
     private final String clusterName;
     private RiemannClient riemannClient;
     private final TransportClusterHealthAction transportClusterHealthAction;
@@ -63,8 +64,8 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
             logger.error("Can not connect to Riemann", e);
         }
         if (riemannHost != null && riemannHost.length() > 0) {
-            riemannReporterThread = EsExecutors.daemonThreadFactory(settings, "riemann_reporter").newThread(new RiemannReporterThread());
-            riemannReporterThread.start();
+            riemannReporterThreadExecutorService = Executors.newSingleThreadExecutor();
+            riemannReporterThreadExecutorService.execute(new RiemannReporterThread());
             logger.info("Riemann reporting triggered every [{}] to host [{}:{}]", riemannRefreshInternal, riemannHost, riemannPort);
         } else {
             logger.error("Riemann reporting disabled, no riemann host configured");
@@ -79,8 +80,8 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
         } catch (IOException e) {
             logger.error("Riemann connection can not be closed", e);
         }
-        if (riemannReporterThread != null) {
-            riemannReporterThread.interrupt();
+        if (riemannReporterThreadExecutorService != null) {
+            riemannReporterThreadExecutorService.shutdown();
         }
         logger.info("Riemann reporter stopped");
     }
