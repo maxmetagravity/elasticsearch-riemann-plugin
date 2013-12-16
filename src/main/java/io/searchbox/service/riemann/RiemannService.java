@@ -19,6 +19,8 @@ import org.elasticsearch.node.service.NodeService;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -37,6 +39,8 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     private String[] tags;
 
     private boolean open = true;
+
+    Timer timer = new Timer();
 
     @Inject
     public RiemannService(Settings settings, ClusterService clusterService, NodeService nodeService, TransportClusterHealthAction transportClusterHealthAction) {
@@ -64,8 +68,9 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
             logger.error("Can not connect to Riemann", e);
         }
         if (riemannHost != null && riemannHost.length() > 0) {
-            riemannReporterThreadExecutorService = Executors.newSingleThreadExecutor();
-            riemannReporterThreadExecutorService.execute(new RiemannReporterThread());
+
+            timer.scheduleAtFixedRate(new RiemannTask(), riemannRefreshInternal.millis(), riemannRefreshInternal.millis());
+
             logger.info("Riemann reporting triggered every [{}] to host [{}:{}]", riemannRefreshInternal, riemannHost, riemannPort);
         } else {
             logger.error("Riemann reporting disabled, no riemann host configured");
@@ -90,47 +95,46 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     protected void doClose() throws ElasticSearchException {
     }
 
-    public class RiemannReporterThread implements Runnable {
+    class RiemannTask extends TimerTask {
+
+        @Override
         public void run() {
-            while (open) {
-                if (riemannClient.isConnected()) {
-                    DiscoveryNode node = clusterService.localNode();
-                    boolean isClusterStarted = clusterService.lifecycleState().equals(Lifecycle.State.STARTED);
-                    if (isClusterStarted && node != null) {
+            logger.debug("running  RiemannTask");
+            if (riemannClient.isConnected()) {
+                logger.debug("getting data via discovery node...");
+                DiscoveryNode node = clusterService.localNode();
+                boolean isClusterStarted = clusterService.lifecycleState().equals(Lifecycle.State.STARTED);
+                if (isClusterStarted && node != null) {
 
-                        final String hostDefinition = clusterName + ":" + node.name();
+                    final String hostDefinition = clusterName + ":" + node.name();
 
-                        if (settings.getAsBoolean("metrics.riemann.health", true)) {
+                    if (settings.getAsBoolean("metrics.riemann.health", true)) {
 
-                            transportClusterHealthAction.execute(new ClusterHealthRequest(), new ActionListener<ClusterHealthResponse>() {
-                                @Override
-                                public void onResponse(ClusterHealthResponse clusterIndexHealths) {
-                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").tags(tags)
-                                            .state(RiemannUtils.getStateWithClusterInformation(clusterIndexHealths.getStatus().name())).send();
-                                }
+                        transportClusterHealthAction.execute(new ClusterHealthRequest(), new ActionListener<ClusterHealthResponse>() {
+                            @Override
+                            public void onResponse(ClusterHealthResponse clusterIndexHealths) {
+                                riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").tags(tags)
+                                        .state(RiemannUtils.getStateWithClusterInformation(clusterIndexHealths.getStatus().name())).send();
+                            }
 
-                                @Override
-                                public void onFailure(Throwable throwable) {
-                                    riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").tags(tags).state("critical").send();
-                                }
-                            });
-                        }
-
-                        NodeStats nodeStats = nodeService.stats(new CommonStatsFlags().all(), true, true, true, true, true, true, true, true);
-                        NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition, clusterName, tags);
-                        nodeStatsRiemannEvent.sendEvents(nodeStats);
-
-                    } else {
-                        if (node != null) {
-                            logger.debug("[{}]/[{}] is not started", node.getId(), node.getName());
-                        } else {
-                            logger.debug("Node is null!");
-                        }
+                            @Override
+                            public void onFailure(Throwable throwable) {
+                                riemannClient.event().host(hostDefinition).service("Cluster Health").description("cluster_health").tags(tags).state("critical").send();
+                            }
+                        });
                     }
 
-                    try {
-                        Thread.sleep(riemannRefreshInternal.millis());
-                    } catch (InterruptedException e1) {
+                    NodeStats nodeStats = nodeService.stats(new CommonStatsFlags().all(), true, true, true, true, true, true, true, true);
+                    NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition, clusterName, tags);
+                    nodeStatsRiemannEvent.sendEvents(nodeStats);
+
+                    logger.debug("event sent to riemann");
+
+                } else {
+                    if (node != null) {
+                        logger.info("[{}]/[{}] is not started", node.getId(), node.getName());
+                    } else {
+                        logger.info("Node is null!");
                     }
                 }
             }
