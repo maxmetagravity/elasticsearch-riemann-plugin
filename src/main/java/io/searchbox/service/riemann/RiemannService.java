@@ -124,7 +124,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
                         });
                     }
 
-                    NodeStats nodeStats = nodeService.stats(new CommonStatsFlags().all(), true, true, true, true, true, true, true, true);
+                    NodeStats nodeStats = nodeService.stats();
                     NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition, clusterName, tags);
                     nodeStatsRiemannEvent.sendEvents(nodeStats);
 
