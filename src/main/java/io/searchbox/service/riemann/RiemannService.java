@@ -6,7 +6,6 @@ import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
 import org.elasticsearch.action.admin.cluster.health.TransportClusterHealthAction;
-import org.elasticsearch.action.admin.cluster.node.stats.NodeStats;
 import org.elasticsearch.action.admin.indices.stats.CommonStatsFlags;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.node.DiscoveryNode;
@@ -15,38 +14,35 @@ import org.elasticsearch.common.component.Lifecycle;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.node.service.NodeService;
+import org.elasticsearch.indices.IndicesService;
+import org.elasticsearch.monitor.MonitorService;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
 
     private final ClusterService clusterService;
-    private NodeService nodeService;
     private final String riemannHost;
     private final Integer riemannPort;
     private final TimeValue riemannRefreshInternal;
+    private MonitorService monitorService;
+    private IndicesService indicesService;
 
-    private volatile ExecutorService riemannReporterThreadExecutorService;
     private final String clusterName;
     private RiemannClient riemannClient;
     private final TransportClusterHealthAction transportClusterHealthAction;
     private String[] tags;
 
-    private boolean open = true;
-
     Timer timer = new Timer();
 
     @Inject
-    public RiemannService(Settings settings, ClusterService clusterService, NodeService nodeService, TransportClusterHealthAction transportClusterHealthAction) {
+    public RiemannService(Settings settings, ClusterService clusterService,
+                          TransportClusterHealthAction transportClusterHealthAction, MonitorService monitorService, IndicesService indicesService) {
         super(settings);
         this.clusterService = clusterService;
-        this.nodeService = nodeService;
         riemannRefreshInternal = settings.getAsTime("metrics.riemann.every", TimeValue.timeValueSeconds(1));
         riemannHost = settings.get("metrics.riemann.host", "localhost");
         riemannPort = settings.getAsInt("metrics.riemann.port", 5555);
@@ -58,6 +54,8 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
             logger.error("Can not create Riemann UDP connection", e);
         }
         this.transportClusterHealthAction = transportClusterHealthAction;
+        this.monitorService = monitorService;
+        this.indicesService = indicesService;
     }
 
     @Override
@@ -81,12 +79,8 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     protected void doStop() throws ElasticSearchException {
         try {
             riemannClient.disconnect();
-            open = false;
         } catch (IOException e) {
             logger.error("Riemann connection can not be closed", e);
-        }
-        if (riemannReporterThreadExecutorService != null) {
-            riemannReporterThreadExecutorService.shutdown();
         }
         logger.info("Riemann reporter stopped");
     }
@@ -124,9 +118,8 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
                         });
                     }
 
-                    NodeStats nodeStats = nodeService.stats(new CommonStatsFlags().all(), true, true, true, true, true, true, true, true);
                     NodeStatsRiemannEvent nodeStatsRiemannEvent = NodeStatsRiemannEvent.getNodeStatsRiemannEvent(riemannClient, settings, hostDefinition, clusterName, tags);
-                    nodeStatsRiemannEvent.sendEvents(nodeStats);
+                    nodeStatsRiemannEvent.sendEvents(monitorService, indicesService.stats(true, new CommonStatsFlags()));
 
                     logger.debug("event sent to riemann");
 
@@ -136,6 +129,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
                     } else {
                         logger.info("Node is null!");
                     }
+
                 }
             }
         }

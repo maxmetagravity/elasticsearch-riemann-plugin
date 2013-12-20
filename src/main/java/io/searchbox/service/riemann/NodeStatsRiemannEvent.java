@@ -1,9 +1,12 @@
 package io.searchbox.service.riemann;
 
 import com.aphyr.riemann.client.RiemannClient;
-import org.elasticsearch.action.admin.cluster.node.stats.NodeStats;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.indices.NodeIndicesStats;
+import org.elasticsearch.monitor.MonitorService;
 import org.elasticsearch.monitor.fs.FsStats;
+import org.elasticsearch.monitor.jvm.JvmStats;
+import org.elasticsearch.monitor.os.OsStats;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -41,43 +44,43 @@ public class NodeStatsRiemannEvent {
 
     }
 
-    public void sendEvents(NodeStats nodeStats) {
+    public void sendEvents(MonitorService monitorService, NodeIndicesStats nodeIndicesStats) {
 
         if (settings.getAsBoolean("metrics.riemann.heap_ratio", true)) {
-            heapRatio(nodeStats);
+            heapRatio(monitorService.jvmService().stats());
         }
 
         if (settings.getAsBoolean("metrics.riemann.current_query_rate", true)) {
-            currentQueryRate(nodeStats);
+            currentQueryRate(nodeIndicesStats);
         }
 
         if (settings.getAsBoolean("metrics.riemann.current_fetch_rate", true)) {
-            currentFetchRate(nodeStats);
+            currentFetchRate(nodeIndicesStats);
         }
 
         if (settings.getAsBoolean("metrics.riemann.current_indexing_rate", true)) {
-            currentIndexingRate(nodeStats);
+            currentIndexingRate(nodeIndicesStats);
         }
 
         if (settings.getAsBoolean("metrics.riemann.total_thread_count", true)) {
-            totalThreadCount(nodeStats);
+            totalThreadCount(monitorService.jvmService().stats());
         }
 
         if (settings.getAsBoolean("metrics.riemann.system_load", true)) {
-            systemLoadOne(nodeStats);
+            systemLoadOne(monitorService.osService().stats());
         }
 
         if (settings.getAsBoolean("metrics.riemann.system_memory_usage", true)) {
-            systemMemory(nodeStats);
+            systemMemory(monitorService.osService().stats());
         }
 
         if (settings.getAsBoolean("metrics.riemann.disk_usage", true)) {
-            systemFile(nodeStats);
+            systemFile(monitorService.fsService().stats());
         }
     }
 
-    private void currentIndexingRate(NodeStats nodeStats) {
-        long indexCount = nodeStats.getIndices().getIndexing().getTotal().getIndexCount();
+    private void currentIndexingRate(NodeIndicesStats nodeIndicesStats) {
+        long indexCount = nodeIndicesStats.getIndexing().getTotal().getIndexCount();
         long delta = deltaMap.get("index_rate");
         long indexingCurrent = indexCount - delta;
         deltaMap.put("index_rate", indexCount);
@@ -85,16 +88,16 @@ public class NodeStatsRiemannEvent {
                 service("Current Indexing Rate").description("current_indexing_rate").tags(tags).state(RiemannUtils.getState(indexingCurrent, 300, 1000)).metric(indexingCurrent).send();
     }
 
-    private void heapRatio(NodeStats nodeStats) {
-        long heapUsed = nodeStats.getJvm().getMem().getHeapUsed().getBytes();
-        long heapCommitted = nodeStats.getJvm().getMem().getHeapCommitted().getBytes();
+    private void heapRatio(JvmStats jvmStats) {
+        long heapUsed = jvmStats.getMem().getHeapUsed().getBytes();
+        long heapCommitted = jvmStats.getMem().getHeapCommitted().getBytes();
         long heapRatio = (heapUsed * 100) / heapCommitted;
         riemannClient.event().host(hostDefinition).
                 service("Heap Usage Ratio %").description("heap_usage_ratio").tags(tags).state(RiemannUtils.getState(heapRatio, 85, 95)).metric(heapRatio).send();
     }
 
-    private void currentQueryRate(NodeStats nodeStats) {
-        long queryCount = nodeStats.getIndices().getSearch().getTotal().getQueryCount();
+    private void currentQueryRate(NodeIndicesStats nodeIndicesStats) {
+        long queryCount = nodeIndicesStats.getSearch().getTotal().getQueryCount();
 
         long delta = deltaMap.get("query_rate");
         long queryCurrent = queryCount - delta;
@@ -104,8 +107,8 @@ public class NodeStatsRiemannEvent {
                 service("Current Query Rate").description("current_query_rate").tags(tags).state(RiemannUtils.getState(queryCurrent, 50, 70)).metric(queryCurrent).send();
     }
 
-    private void currentFetchRate(NodeStats nodeStats) {
-        long fetchCount = nodeStats.getIndices().getSearch().getTotal().getFetchCount();
+    private void currentFetchRate(NodeIndicesStats nodeIndicesStats) {
+        long fetchCount = nodeIndicesStats.getSearch().getTotal().getFetchCount();
         long delta = deltaMap.get("fetch_rate");
         long fetchCurrent = fetchCount - delta;
         deltaMap.put("fetch_rate", fetchCount);
@@ -113,27 +116,27 @@ public class NodeStatsRiemannEvent {
                 service("Current Fetch Rate").description("current_fetch_rate").tags(tags).state(RiemannUtils.getState(fetchCurrent, 50, 70)).metric(fetchCurrent).send();
     }
 
-    private void totalThreadCount(NodeStats nodeStats) {
-        int threadCount = nodeStats.getJvm().getThreads().getCount();
+    private void totalThreadCount(JvmStats jvmStats) {
+        int threadCount = jvmStats.getThreads().getCount();
         riemannClient.event().host(hostDefinition).
                 service("Total Thread Count").description("total_thread_count").tags(tags).state(RiemannUtils.getState(threadCount, 150, 200)).metric(threadCount).send();
     }
 
-    private void systemLoadOne(NodeStats nodeStats) {
-        double[] systemLoad = nodeStats.getOs().getLoadAverage();
+    private void systemLoadOne(OsStats osStats) {
+        double[] systemLoad = osStats.getLoadAverage();
         riemannClient.event().host(hostDefinition).
                 service("System Load(1m)").description("system_load").tags(tags).state(RiemannUtils.getState((long) systemLoad[0], 2, 5)).metric(systemLoad[0]).send();
     }
 
-    private void systemMemory(NodeStats nodeStats) {
-        short memoryUsedPercentage = nodeStats.getOs().getMem().getUsedPercent();
+    private void systemMemory(OsStats osStats) {
+        short memoryUsedPercentage = osStats.getMem().getUsedPercent();
         riemannClient.event().host(hostDefinition).
                 service("System Memory Usage %").description("system_memory_usage").tags(tags).state(RiemannUtils.getState(memoryUsedPercentage, 80, 90)).metric(memoryUsedPercentage).send();
 
     }
 
-    private void systemFile(NodeStats nodeStats) {
-        for (FsStats.Info info : nodeStats.getFs()) {
+    private void systemFile(FsStats fsStats) {
+        for (FsStats.Info info : fsStats) {
             long free = info.getFree().getBytes();
             long total = info.getTotal().getBytes();
             long usageRatio = ((total - free) * 100) / total;
