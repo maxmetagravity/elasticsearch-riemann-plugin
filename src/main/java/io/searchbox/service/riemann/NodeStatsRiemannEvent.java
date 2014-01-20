@@ -70,6 +70,14 @@ public class NodeStatsRiemannEvent {
             systemLoadOne(monitorService.osService().stats());
         }
 
+        if (settings.getAsBoolean("metrics.riemann.system_load_5m", true)) {
+            systemLoadFive(monitorService.osService().stats());
+        }
+
+        if (settings.getAsBoolean("metrics.riemann.system_load_15m", true)) {
+            systemLoadFifteen(monitorService.osService().stats());
+        }
+
         if (settings.getAsBoolean("metrics.riemann.system_memory_usage", true)) {
             systemMemory(monitorService.osService().stats());
         }
@@ -126,6 +134,18 @@ public class NodeStatsRiemannEvent {
         double[] systemLoad = osStats.getLoadAverage();
         riemannClient.event().host(hostDefinition).
                 service("System Load(1m)").description("system_load").tags(tags).state(RiemannUtils.getState((long) systemLoad[0], 2, 5)).metric(systemLoad[0]).send();
+    }
+
+    private void systemLoadFive(OsStats osStats) {
+        double[] systemLoad = osStats.getLoadAverage();
+        riemannClient.event().host(hostDefinition).
+                service("System Load(5m)").description("system_load").tags(tags).state(RiemannUtils.getState((long) systemLoad[1], 2, 5)).metric(systemLoad[1]).send();
+    }
+
+    private void systemLoadFifteen(OsStats osStats) {
+        double[] systemLoad = osStats.getLoadAverage();
+        riemannClient.event().host(hostDefinition).
+                service("System Load(15m)").description("system_load").tags(tags).state(RiemannUtils.getState((long) systemLoad[2], 2, 5)).metric(systemLoad[2]).send();
     }
 
     private void systemMemory(OsStats osStats) {
