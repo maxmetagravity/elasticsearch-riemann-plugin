@@ -1,7 +1,7 @@
 package io.searchbox.service.riemann;
 
 import com.aphyr.riemann.client.RiemannClient;
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
@@ -19,7 +19,6 @@ import org.elasticsearch.monitor.MonitorService;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.EnumSet;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -60,7 +59,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     }
 
     @Override
-    protected void doStart() throws ElasticSearchException {
+    protected void doStart() throws ElasticsearchException {
         try {
             riemannClient.connect();
         } catch (IOException e) {
@@ -77,7 +76,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     }
 
     @Override
-    protected void doStop() throws ElasticSearchException {
+    protected void doStop() throws ElasticsearchException {
         try {
             riemannClient.disconnect();
         } catch (IOException e) {
@@ -87,7 +86,7 @@ public class RiemannService extends AbstractLifecycleComponent<RiemannService> {
     }
 
     @Override
-    protected void doClose() throws ElasticSearchException {
+    protected void doClose() throws ElasticsearchException {
     }
 
     class RiemannTask extends TimerTask {
